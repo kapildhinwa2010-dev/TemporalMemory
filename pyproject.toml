@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "temporalmemory"
+version = "0.1.0"
+description = "TemporalMemory - Fact memory with multi-hop event chains derived at query time"
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.24"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
