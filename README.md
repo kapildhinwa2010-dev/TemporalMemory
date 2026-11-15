@@ -1,7 +1,8 @@
 # TemporalMemory
 
 [![CI](https://github.com/kapildhinwa2010-dev/TemporalMemory/actions/workflows/ci.yml/badge.svg)](https://github.com/kapildhinwa2010-dev/TemporalMemory/actions/workflows/ci.yml)
-[![CI](https://github.com/kapildhinwa2010-dev/TemporalMemory/actions/workflows/codeql.yml/badge.svg)](https://github.com/kapildhinwa2010-dev/TemporalMemory/actions/workflows/codeql.yml)
+[![CodeQL](https://github.com/kapildhinwa2010-dev/TemporalMemory/actions/workflows/codeql.yml/badge.svg)](https://github.com/kapildhinwa2010-dev/TemporalMemory/actions/workflows/codeql.yml)
+
 
 Timestamped event memory: sorted timelines, range queries, next-after, latest.
 
