@@ -1,88 +1,69 @@
 import pytest
 
-from temporalmemory import Fact, KnowledgeNet
+from temporalmemory import Event, TemporalMemory
 
 
-def test_fact_basic():
-    fact = Fact("alice", "knows", "bob")
-    assert fact.as_tuple() == ("alice", "knows", "bob")
+def test_event_basic():
+    event = Event("login", 100.0)
+    assert event.as_tuple() == (100.0, "login")
 
 
-def test_fact_rejects_empty():
+def test_event_rejects_empty_name():
     with pytest.raises(ValueError):
-        Fact("", "knows", "bob")
+        Event("", 1.0)
 
 
-def test_fact_equality_and_hash():
-    assert Fact("a", "p", "b") == Fact("a", "p", "b")
-    assert hash(Fact("a", "p", "b")) == hash(Fact("a", "p", "b"))
-    assert Fact("a", "p", "b") != Fact("a", "p", "c")
+def test_event_equality_and_hash():
+    assert Event("a", 1.0) == Event("a", 1.0)
+    assert hash(Event("a", 1.0)) == hash(Event("a", 1.0))
+    assert Event("a", 1.0) != Event("a", 2.0)
 
 
 def test_add_and_len():
-    net = KnowledgeNet()
-    assert net.add("a", "knows", "b") is True
-    assert net.add("a", "knows", "b") is False
-    assert len(net) == 1
+    mem = TemporalMemory()
+    assert mem.add_event("a", 1.0) is True
+    assert mem.add_event("a", 1.0) is False
+    assert len(mem) == 1
 
 
-def test_query_pattern():
-    net = KnowledgeNet()
-    net.add("a", "knows", "b")
-    net.add("b", "knows", "c")
-    net.add("a", "likes", "c")
-    assert len(net.query(subject="a")) == 2
-    assert len(net.query(predicate="knows")) == 2
-    assert len(net.query(obj="c")) == 2
-    assert len(net.query(subject="a", predicate="likes")) == 1
+def test_timeline_sorted():
+    mem = TemporalMemory()
+    mem.add_event("late", 30.0)
+    mem.add_event("early", 10.0)
+    mem.add_event("mid", 20.0)
+    assert [e.name for e in mem.timeline()] == ["early", "mid", "late"]
 
 
-def test_derive_aliases_transitive():
-    net = KnowledgeNet()
-    net.add("x", "same_as", "y")
-    net.add("y", "same_as", "z")
-    aliases = net.derive_aliases()
-    assert aliases["x"] == aliases["y"] == aliases["z"]
+def test_events_between_inclusive():
+    mem = TemporalMemory()
+    mem.add_event("a", 10.0)
+    mem.add_event("b", 20.0)
+    mem.add_event("c", 30.0)
+    assert [e.name for e in mem.events_between(10.0, 20.0)] == ["a", "b"]
 
 
-def test_derive_aliases_ignores_other_predicates():
-    net = KnowledgeNet()
-    net.add("x", "knows", "y")
-    assert net.derive_aliases() == {}
-
-
-def test_chain_walk():
-    net = KnowledgeNet()
-    net.add("a", "next", "b")
-    net.add("b", "next", "c")
-    net.add("c", "next", "d")
-    assert net.chain("a", "next") == ["b", "c", "d"]
-
-
-def test_chain_respects_max_hops():
-    net = KnowledgeNet()
-    net.add("a", "next", "b")
-    net.add("b", "next", "c")
-    assert net.chain("a", "next", max_hops=1) == ["b"]
-
-
-def test_chain_handles_cycles():
-    net = KnowledgeNet()
-    net.add("a", "next", "b")
-    net.add("b", "next", "a")
-    assert net.chain("a", "next") == ["b"]
-
-
-def test_interference_ranks_related():
-    net = KnowledgeNet()
-    net.add("hub", "knows", "a")
-    net.add("hub", "knows", "b")
-    net.add("lonely", "knows", "c")
-    top = net.interference("hub")
-    assert top and top[0].subject == "hub"
-
-
-def test_chain_rejects_bad_hops():
-    net = KnowledgeNet()
+def test_events_between_rejects_inverted():
+    mem = TemporalMemory()
     with pytest.raises(ValueError):
-        net.chain("a", "next", max_hops=0)
+        mem.events_between(20.0, 10.0)
+
+
+def test_next_after():
+    mem = TemporalMemory()
+    mem.add_event("a", 10.0)
+    mem.add_event("b", 20.0)
+    assert mem.next_after(10.0).name == "b"
+    assert mem.next_after(20.0) is None
+
+
+def test_latest():
+    mem = TemporalMemory()
+    mem.add_event("a", 10.0)
+    mem.add_event("b", 20.0)
+    assert mem.latest().name == "b"
+
+
+def test_latest_empty_raises():
+    mem = TemporalMemory()
+    with pytest.raises(ValueError):
+        mem.latest()

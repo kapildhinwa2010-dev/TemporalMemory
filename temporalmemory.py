@@ -1,133 +1,81 @@
-# TemporalMemory - Fact memory with multi-hop event chains derived at query time
+# TemporalMemory - Timestamped event memory with time-range queries
 # Part of the Kapildhinwa2010-dev Toolkit.
 
-"""KnowledgeNet - facts, alias derivation and chain reasoning.
+"""Temporal event memory: events ordered by timestamp.
 
-Lineage: reserv.dean-part-2 (HELIX). Facts are stored as (subject, predicate,
-object) triples; aliases are derived transitively from equality facts; chain
-reasoning walks predicates to answer multi-hop queries.
+Lineage: reserv.dean-part-2 (HELIX). Unlike the sibling fact memories,
+this repo stores TIME-STAMPED events and answers temporal queries:
+sorted timelines, range queries, next-after and latest.
+
+HONEST LIMITATION: timestamps are plain numbers (any monotone clock you
+choose); there is no wall-clock parsing and no persistence.
 """
 
 from __future__ import annotations
 
-from collections import defaultdict
-
-import numpy as np
-
-__all__ = ["Fact", "KnowledgeNet"]
+__all__ = ["Event", "TemporalMemory"]
 
 
-class Fact:
-    """A single (subject, predicate, object) triple."""
+class Event:
+    """A single named event at a numeric timestamp."""
 
-    __slots__ = ("subject", "predicate", "object")
+    __slots__ = ("name", "timestamp")
 
-    def __init__(self, subject: str, predicate: str, obj: str) -> None:
-        for value in (subject, predicate, obj):
-            if not isinstance(value, str) or not value:
-                raise ValueError("subject, predicate and object must be non-empty strings")
-        self.subject = subject
-        self.predicate = predicate
-        self.object = obj
+    def __init__(self, name: str, timestamp: float) -> None:
+        if not isinstance(name, str) or not name:
+            raise ValueError("name must be a non-empty string")
+        self.name = name
+        self.timestamp = float(timestamp)
 
     def as_tuple(self):
-        return (self.subject, self.predicate, self.object)
+        return (self.timestamp, self.name)
 
     def __eq__(self, other) -> bool:
-        return isinstance(other, Fact) and self.as_tuple() == other.as_tuple()
+        return isinstance(other, Event) and self.as_tuple() == other.as_tuple()
 
     def __hash__(self) -> int:
         return hash(self.as_tuple())
 
     def __repr__(self) -> str:
-        return "Fact({!r}, {!r}, {!r})".format(*self.as_tuple())
+        return "Event({!r}, t={})".format(self.name, self.timestamp)
 
 
-class KnowledgeNet:
-    """Zero-overhead fact base with alias and chain reasoning."""
+class TemporalMemory:
+    """Event log with sorted-timeline temporal queries."""
 
     def __init__(self) -> None:
-        self._facts: set = set()
-        self._by_subject: dict = defaultdict(list)
-        self._by_object: dict = defaultdict(list)
+        self._events: set = set()
 
-    def add(self, subject: str, predicate: str, obj: str) -> bool:
-        """Add a fact; returns False if it already exists."""
-        fact = Fact(subject, predicate, obj)
-        if fact in self._facts:
+    def add_event(self, name: str, timestamp: float) -> bool:
+        """Add an event; returns False if the (name, time) pair exists."""
+        event = Event(name, timestamp)
+        if event in self._events:
             return False
-        self._facts.add(fact)
-        self._by_subject[fact.subject].append(fact)
-        self._by_object[fact.object].append(fact)
+        self._events.add(event)
         return True
 
-    def facts(self):
-        return sorted(self._facts, key=lambda f: f.as_tuple())
+    def timeline(self) -> list:
+        """All events sorted by (timestamp, name)."""
+        return sorted(self._events, key=lambda e: e.as_tuple())
+
+    def events_between(self, start: float, end: float) -> list:
+        """Events with start <= timestamp <= end (inclusive)."""
+        if start > end:
+            raise ValueError("start must be <= end")
+        return [e for e in self.timeline() if start <= e.timestamp <= end]
+
+    def next_after(self, timestamp: float):
+        """First event strictly after ``timestamp``, or None."""
+        for e in self.timeline():
+            if e.timestamp > timestamp:
+                return e
+        return None
+
+    def latest(self):
+        """The most recent event; ValueError if empty."""
+        if not self._events:
+            raise ValueError("memory is empty")
+        return self.timeline()[-1]
 
     def __len__(self) -> int:
-        return len(self._facts)
-
-    def query(self, subject=None, predicate=None, obj=None):
-        """Return facts matching the given pattern (None = wildcard)."""
-        results = self._facts
-        if subject is not None:
-            results = [f for f in results if f.subject == subject]
-        if predicate is not None:
-            results = [f for f in results if f.predicate == predicate]
-        if obj is not None:
-            results = [f for f in results if f.object == obj]
-        return sorted(results, key=lambda f: f.as_tuple())
-
-    def derive_aliases(self) -> dict:
-        """Transitive closure of ``same_as`` equality facts."""
-        adjacency: dict = defaultdict(set)
-        for fact in self._facts:
-            if fact.predicate == "same_as":
-                adjacency[fact.subject].add(fact.object)
-                adjacency[fact.object].add(fact.subject)
-        aliases: dict = {}
-        for node in list(adjacency):
-            if node in aliases:
-                continue
-            component = set()
-            stack = [node]
-            while stack:
-                current = stack.pop()
-                if current in component:
-                    continue
-                component.add(current)
-                stack.extend(adjacency[current] - component)
-            canonical = min(component)
-            for member in component:
-                aliases[member] = canonical
-        return aliases
-
-    def chain(self, start: str, predicate: str, max_hops: int = 4) -> list:
-        """Multi-hop walk following ``predicate`` from ``start``."""
-        if max_hops < 1:
-            raise ValueError("max_hops must be >= 1")
-        hops = []
-        current = start
-        seen = {start}
-        for _ in range(max_hops):
-            nxt = [f.object for f in self._by_subject.get(current, []) if f.predicate == predicate]
-            if not nxt:
-                break
-            hops.append(nxt[0])
-            if nxt[0] in seen:
-                break
-            seen.add(nxt[0])
-            current = nxt[0]
-        return hops
-
-    def interference(self, query: str, top_k: int = 3) -> list:
-        """Rank facts related to ``query`` by co-occurrence interference."""
-        if top_k < 1:
-            raise ValueError("top_k must be >= 1")
-        scores: dict = {}
-        for fact in self._facts:
-            if query in (fact.subject, fact.object):
-                related = self.query(subject=fact.object) + self.query(obj=fact.subject)
-                scores[fact] = len(related)
-        ranked = sorted(scores.items(), key=lambda kv: (-kv[1], kv[0].as_tuple()))
-        return [fact for fact, _ in ranked[:top_k]]
+        return len(self._events)
